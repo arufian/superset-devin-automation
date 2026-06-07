@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import html as html_lib
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
@@ -46,14 +47,7 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
 
     logger.info("Received GitHub event: %s", event_type)
 
-    if event_type == "issues":
-        issue = webhook.extract_issue_from_webhook(payload)
-        if issue:
-            logger.info("Trigger label detected on issue #%d", issue["number"])
-            background_tasks.add_task(orchestrator.process_issue, issue, "webhook_label")
-            return {"status": "dispatched", "issue": issue["number"]}
-
-    return {"status": "ignored", "event": event_type}
+    return orchestrator.handle_github_event(event_type, payload)
 
 
 @app.post("/scan")
@@ -63,15 +57,55 @@ async def trigger_scan(background_tasks: BackgroundTasks):
 
 
 @app.post("/process/{issue_number}")
-async def process_issue(issue_number: int, background_tasks: BackgroundTasks):
+async def process_issue(
+    issue_number: int,
+    background_tasks: BackgroundTasks,
+    action: str | None = None,
+):
     from src import github_client
     try:
         issue = github_client.get_issue(issue_number)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Issue not found: {e}")
 
-    background_tasks.add_task(orchestrator.process_issue, issue, "manual_trigger")
+    forced_action = action if action in {"plan", "implement_plan"} else None
+    background_tasks.add_task(orchestrator.process_issue, issue, "manual_trigger", forced_action)
     return {"status": "dispatched", "issue": issue_number}
+
+
+@app.post("/classify/{issue_number}")
+async def classify_issue(issue_number: int):
+    from src import github_client
+    try:
+        issue = github_client.get_issue(issue_number)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Issue not found: {e}")
+
+    return orchestrator.classify_issue_event(issue, "manual_classification")
+
+
+@app.post("/pr/{pr_number}/safety")
+async def scan_pr_safety(pr_number: int):
+    from src import github_client
+    pr_data = {
+        "number": pr_number,
+        "title": f"Manual PR #{pr_number}",
+        "html_url": f"https://github.com/{settings.github_repo}/pull/{pr_number}",
+    }
+    try:
+        diff = github_client.get_pull_request_diff(pr_number)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"PR diff not found: {e}")
+
+    result = orchestrator.scan_pr_safety(pr_data, "manual_pr_safety_scan", diff)
+    if result["scan"]["blocked"]:
+        return JSONResponse(status_code=409, content=result)
+    return result
+
+
+@app.post("/recover")
+async def recover():
+    return orchestrator.recover_scheduled_work()
 
 
 @app.post("/sync/{job_id}")
@@ -113,6 +147,7 @@ async def health():
         "target_repo": settings.github_repo,
         "devin_configured": bool(settings.devin_api_key and settings.devin_org_id),
         "github_configured": bool(settings.github_token),
+        "auto_merge_enabled": settings.auto_merge_enabled,
     }
 
 
@@ -129,6 +164,9 @@ async def dashboard():
         "completed": "🎉",
         "failed": "❌",
         "devin_exited": "⚠️",
+        "plan_dispatched": "📝",
+        "plan_approved": "✅",
+        "stale": "🕒",
     }
 
     rows = ""
@@ -136,17 +174,24 @@ async def dashboard():
         emoji = status_emoji.get(job["status"], "❓")
         session_link = ""
         if job.get("devin_session_url"):
-            session_link = f'<a href="{job["devin_session_url"]}" target="_blank">Session</a>'
+            session_url = html_lib.escape(job["devin_session_url"], quote=True)
+            session_link = f'<a href="{session_url}" target="_blank">Session</a>'
+        issue_url = html_lib.escape(job["issue_url"], quote=True)
+        issue_title = html_lib.escape(job["issue_title"][:60])
+        status = html_lib.escape(job["status"])
+        devin_status = html_lib.escape(job.get("devin_status") or "-")
+        trigger_type = html_lib.escape(job["trigger_type"])
+        created_at = html_lib.escape(job["created_at"][:19])
         rows += f"""
         <tr>
             <td>{job["id"]}</td>
-            <td><a href="{job["issue_url"]}" target="_blank">#{job["issue_number"]}</a></td>
-            <td>{job["issue_title"][:60]}</td>
-            <td>{emoji} {job["status"]}</td>
-            <td>{job.get("devin_status", "-")}</td>
-            <td>{job["trigger_type"]}</td>
+            <td><a href="{issue_url}" target="_blank">#{job["issue_number"]}</a></td>
+            <td>{issue_title}</td>
+            <td>{emoji} {status}</td>
+            <td>{devin_status}</td>
+            <td>{trigger_type}</td>
             <td>{session_link}</td>
-            <td>{job["created_at"][:19]}</td>
+            <td>{created_at}</td>
         </tr>"""
 
     html = f"""
@@ -178,6 +223,10 @@ async def dashboard():
                 <div class="value">{metrics_data["total_jobs"]}</div>
             </div>
             <div class="metric">
+                <h3>Issues Classified</h3>
+                <div class="value">{metrics_data["issues_classified"]}</div>
+            </div>
+            <div class="metric">
                 <h3>Completed</h3>
                 <div class="value">{metrics_data["by_status"].get("completed", 0)}</div>
             </div>
@@ -188,6 +237,14 @@ async def dashboard():
             <div class="metric">
                 <h3>Failed</h3>
                 <div class="value">{metrics_data["by_status"].get("failed", 0)}</div>
+            </div>
+            <div class="metric">
+                <h3>Blocked PRs</h3>
+                <div class="value">{metrics_data["prs_blocked_by_safety_scans"]}</div>
+            </div>
+            <div class="metric">
+                <h3>Plans Waiting</h3>
+                <div class="value">{metrics_data["plan_workflows_waiting_for_approval"]}</div>
             </div>
         </div>
 
@@ -212,7 +269,10 @@ async def dashboard():
         <ul>
             <li><code>POST /webhook/github</code> - GitHub webhook receiver</li>
             <li><code>POST /scan</code> - Trigger manual scan of devin:ready issues</li>
+            <li><code>POST /recover</code> - Scheduled recovery scan for issues, jobs, and PR safety</li>
+            <li><code>POST /classify/{{issue_number}}</code> - Classify one issue</li>
             <li><code>POST /process/{{issue_number}}</code> - Process specific issue</li>
+            <li><code>POST /pr/{{pr_number}}/safety</code> - Scan PR diff for prompt-injection and malicious-code risk</li>
             <li><code>POST /sync/{{job_id}}</code> - Sync Devin session status</li>
             <li><code>GET /jobs</code> - List all jobs</li>
             <li><code>GET /jobs/{{job_id}}</code> - Get specific job</li>

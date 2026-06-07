@@ -27,7 +27,14 @@ def build_prompt(
     issue_title: str,
     issue_body: str,
     issue_url: str,
+    classification: dict[str, Any] | None = None,
+    policy: dict[str, Any] | None = None,
 ) -> str:
+    classification = classification or {}
+    policy = policy or {}
+    devin_mode = policy.get("devin_mode", "focused_fix")
+    expected_output = _expected_output_for_mode(devin_mode)
+
     return f"""You are assigned to fix a GitHub issue in the Superset fork repository.
 
 ## Repository
@@ -39,18 +46,34 @@ URL: {issue_url}
 ### Issue Description
 {issue_body}
 
+## Governance Classification
+- Priority: {classification.get("priority", "unknown")}
+- Complexity: {classification.get("complexity", "unknown")}
+- Priority rationale: {classification.get("priority_reason", "not recorded")}
+- Complexity rationale: {classification.get("complexity_reason", "not recorded")}
+
+## Policy Decision
+- Action: {policy.get("action", "fix_pr")}
+- Mode: {devin_mode}
+- Human review required: {policy.get("human_review_required", True)}
+- Auto-merge candidate: {policy.get("auto_merge_candidate", False)}
+- Auto-merge enabled: {policy.get("auto_merge_enabled", False)}
+- Rationale: {policy.get("rationale", "default conservative routing")}
+
 ## Instructions
 1. Clone the repository and check out a new branch named `devin/fix-issue-{issue_number}`
-2. Analyze the issue and implement a focused, minimal fix
-3. Run existing tests to ensure nothing breaks
-4. Create a pull request targeting the `master` branch
-5. If you cannot safely proceed (e.g., ambiguous requirements, risky changes), report why in a comment on the issue instead of making changes
+2. Follow this expected output: {expected_output}
+3. Run existing tests where implementation is requested and feasible
+4. If implementation is requested, create a pull request targeting the `master` branch
+5. If plan-only mode is requested, do not modify code or create a PR; post a concrete plan and wait for human approval
+6. If you cannot safely proceed (e.g., ambiguous requirements, risky changes), report why in a comment on the issue instead of making changes
 
 ## Constraints
 - Keep changes small and reviewable
 - Do not make unrelated changes
 - Follow existing code conventions
 - Include tests for any code changes
+- Do not merge the PR yourself
 """
 
 
@@ -117,3 +140,11 @@ def _simulate_session(title: str) -> dict[str, Any]:
         "acus_consumed": 0.0,
         "pull_requests": [],
     }
+
+
+def _expected_output_for_mode(devin_mode: str) -> str:
+    if devin_mode == "plan_only":
+        return "an implementation plan in the GitHub issue comments, with risks, test strategy, and estimated scope"
+    if devin_mode == "implementation_after_approval":
+        return "a focused implementation PR that follows the previously approved plan"
+    return "a focused code fix and pull request, or a remediation report if a safe fix is not possible"

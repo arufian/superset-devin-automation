@@ -34,9 +34,12 @@ def extract_issue_from_webhook(payload: dict[str, Any]) -> dict[str, Any] | None
     if not issue:
         return None
 
+    if action == "opened":
+        return issue
+
     if action == "labeled":
         label = payload.get("label", {})
-        if label.get("name") == settings.trigger_label:
+        if label.get("name") in {settings.trigger_label, settings.plan_label, settings.scan_label}:
             return issue
 
     return None
@@ -44,3 +47,29 @@ def extract_issue_from_webhook(payload: dict[str, Any]) -> dict[str, Any] | None
 
 def is_issue_labeled_event(payload: dict[str, Any]) -> bool:
     return payload.get("action") == "labeled"
+
+
+def labeled_name(payload: dict[str, Any]) -> str:
+    return payload.get("label", {}).get("name", "")
+
+
+def extract_pull_request_from_webhook(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if payload.get("action") not in {"opened", "synchronize", "reopened"}:
+        return None
+    return payload.get("pull_request")
+
+
+def extract_issue_comment_approval(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if payload.get("action") != "created":
+        return None
+
+    issue = payload.get("issue") or {}
+    if issue.get("pull_request"):
+        return None
+
+    comment = payload.get("comment") or {}
+    body = (comment.get("body") or "").strip().lower()
+    if body == "run that plan":
+        return issue
+
+    return None

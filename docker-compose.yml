@@ -10,6 +10,8 @@ services:
       - GITHUB_REPO=${GITHUB_REPO:-arufian/superset}
       - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
       - SIMULATION_MODE=${SIMULATION_MODE:-false}
+      - AUTO_MERGE_ENABLED=${AUTO_MERGE_ENABLED:-false}
+      - STALE_JOB_HOURS=${STALE_JOB_HOURS:-24}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DB_PATH=/app/data/jobs.db
     volumes:

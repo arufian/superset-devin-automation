@@ -1,12 +1,36 @@
-name: Devin Automation - Issue Label Trigger
+name: Devin Automation - Issue Governance
 
 on:
   issues:
-    types: [labeled]
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to process
+        required: true
+      action:
+        description: Governance action
+        required: true
+        default: fix
+        type: choice
+        options:
+          - classify
+          - fix
+          - plan
+          - implement_plan
+
+permissions:
+  contents: read
+  issues: write
 
 jobs:
-  dispatch-to-devin:
-    if: github.event.label.name == 'devin:fix'
+  classify-or-dispatch:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'issues' ||
+      (github.event_name == 'issue_comment' && github.event.action == 'created' && github.event.comment.body == 'run that plan')
     runs-on: ubuntu-latest
 
     steps:
@@ -30,23 +54,16 @@ jobs:
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           DEVIN_ORG_ID: ${{ secrets.DEVIN_ORG_ID }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPO: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          GITHUB_REPO: ${{ vars.TARGET_REPO || github.repository }}
           SIMULATION_MODE: ${{ vars.SIMULATION_MODE || 'false' }}
-          LOG_LEVEL: INFO
+          LOG_LEVEL: ${{ vars.LOG_LEVEL || 'INFO' }}
           DB_PATH: data/jobs.db
+          AUTO_MERGE_ENABLED: ${{ vars.AUTO_MERGE_ENABLED || 'false' }}
+          STALE_JOB_HOURS: ${{ vars.STALE_JOB_HOURS || '24' }}
         run: |
           cd automation
-          python -c "
-          import json
-          from src import orchestrator, tracker
-          tracker.init_db()
-          issue = json.loads('''${{ toJson(github.event.issue) }}''')
-          result = orchestrator.process_issue(issue, 'github_actions_label')
-          print(f'Job created: {result[\"id\"]}')
-          print(f'Status: {result[\"status\"]}')
-          print(f'Devin Session: {result.get(\"devin_session_url\", \"N/A\")}')
-          "
+          python -m src.actions issue-governance
 
       - name: Upload job database
         uses: actions/upload-artifact@v4

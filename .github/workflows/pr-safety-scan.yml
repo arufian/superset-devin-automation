@@ -1,17 +1,21 @@
-name: Devin Automation - Scheduled Scan
+name: Devin Automation - PR Safety Scan
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'
+  pull_request:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to scan
+        required: true
 
 permissions:
   contents: read
-  issues: write
   pull-requests: read
+  issues: write
 
 jobs:
-  scan-ready-issues:
+  pr-safety-scan:
     runs-on: ubuntu-latest
 
     steps:
@@ -31,25 +35,23 @@ jobs:
           cd automation
           pip install -e .
 
-      - name: Recover scheduled automation work
+      - name: Scan pull request diff
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           DEVIN_ORG_ID: ${{ secrets.DEVIN_ORG_ID }}
           GITHUB_TOKEN: ${{ secrets.GH_PAT || github.token }}
-          GITHUB_REPO: ${{ vars.TARGET_REPO || 'arufian/superset' }}
+          GITHUB_REPO: ${{ vars.TARGET_REPO || github.repository }}
           SIMULATION_MODE: ${{ vars.SIMULATION_MODE || 'false' }}
           LOG_LEVEL: ${{ vars.LOG_LEVEL || 'INFO' }}
           DB_PATH: data/jobs.db
-          AUTO_MERGE_ENABLED: ${{ vars.AUTO_MERGE_ENABLED || 'false' }}
-          STALE_JOB_HOURS: ${{ vars.STALE_JOB_HOURS || '24' }}
         run: |
           cd automation
-          python -m src.actions scheduled-recovery
+          python -m src.actions pr-safety
 
-      - name: Upload job database
+      - name: Upload safety database
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: jobs-database-scan
+          name: safety-jobs-database
           path: automation/data/jobs.db
           retention-days: 30
