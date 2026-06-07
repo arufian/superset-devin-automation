@@ -1,0 +1,57 @@
+name: Devin Automation - Issue Label Trigger
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  dispatch-to-devin:
+    if: github.event.label.name == 'devin:fix'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout automation repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/superset-devin-automation
+          path: automation
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd automation
+          pip install -e .
+
+      - name: Process issue
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          DEVIN_ORG_ID: ${{ secrets.DEVIN_ORG_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          SIMULATION_MODE: ${{ vars.SIMULATION_MODE || 'false' }}
+          LOG_LEVEL: INFO
+          DB_PATH: data/jobs.db
+        run: |
+          cd automation
+          python -c "
+          import json
+          from src import orchestrator, tracker
+          tracker.init_db()
+          issue = json.loads('''${{ toJson(github.event.issue) }}''')
+          result = orchestrator.process_issue(issue, 'github_actions_label')
+          print(f'Job created: {result[\"id\"]}')
+          print(f'Status: {result[\"status\"]}')
+          print(f'Devin Session: {result.get(\"devin_session_url\", \"N/A\")}')
+          "
+
+      - name: Upload job database
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jobs-database
+          path: automation/data/jobs.db
+          retention-days: 30

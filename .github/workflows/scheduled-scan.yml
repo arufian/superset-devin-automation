@@ -1,0 +1,55 @@
+name: Devin Automation - Scheduled Scan
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  scan-ready-issues:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout automation repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/superset-devin-automation
+          path: automation
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd automation
+          pip install -e .
+
+      - name: Scan for ready issues
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          DEVIN_ORG_ID: ${{ secrets.DEVIN_ORG_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ vars.TARGET_REPO || 'arufian/superset' }}
+          SIMULATION_MODE: ${{ vars.SIMULATION_MODE || 'false' }}
+          LOG_LEVEL: INFO
+          DB_PATH: data/jobs.db
+        run: |
+          cd automation
+          python -c "
+          from src import orchestrator, tracker
+          tracker.init_db()
+          results = orchestrator.scan_ready_issues()
+          print(f'Scan complete: {len(results)} issues processed')
+          for job in results:
+              print(f'  - Issue #{job[\"issue_number\"]}: {job[\"status\"]}')
+          "
+
+      - name: Upload job database
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jobs-database-scan
+          path: automation/data/jobs.db
+          retention-days: 30
