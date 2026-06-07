@@ -118,13 +118,9 @@ Common demo:
 
 Run workflow: `Devin Automation - PR Safety Scan`
 
-Input:
+No input needed. Manual run scans every open pull request. Pull request open/update events scan the changed PR automatically.
 
-```text
-pr_number: 1
-```
-
-If unsafe diff content is found, workflow fails and comments on the PR.
+If unsafe diff content is found, workflow fails and comments on the affected PR.
 
 ### Scheduled Recovery Demo
 

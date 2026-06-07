@@ -164,10 +164,22 @@ def list_open_pull_requests() -> list[dict[str, Any]]:
         return []
 
     url = _api_url("pulls")
+    pull_requests: list[dict[str, Any]] = []
     with httpx.Client(timeout=30) as client:
-        resp = client.get(url, params={"state": "open", "per_page": 50}, headers=_headers())
-        _raise_for_status(resp, "list open PRs")
-        return resp.json()
+        page = 1
+        while True:
+            resp = client.get(
+                url,
+                params={"state": "open", "per_page": 100, "page": page},
+                headers=_headers(),
+            )
+            _raise_for_status(resp, "list open PRs")
+            batch = resp.json()
+            pull_requests.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+    return pull_requests
 
 
 def list_open_issues(per_page: int = 50) -> list[dict[str, Any]]:

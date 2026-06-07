@@ -37,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "pr-safety":
         result = _handle_pr_safety()
         _print_json(result)
-        return 1 if result["scan"]["blocked"] else 0
+        return 1 if _pr_safety_blocked(result) else 0
     if args.command == "scheduled-recovery":
         result = _handle_scheduled_recovery()
         _print_json(result)
@@ -84,12 +84,25 @@ def _handle_pr_safety() -> dict[str, Any]:
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
 
     if event_name == "workflow_dispatch":
-        pr_number = int(event.get("inputs", {})["pr_number"])
-        pr = github_client.get_pull_request(pr_number)
-    else:
-        pr = event["pull_request"]
+        results = []
+        for pr in github_client.list_open_pull_requests():
+            results.append(orchestrator.scan_pr_safety(pr, "github_actions_manual_pr_safety_all"))
+        return {
+            "status": "completed",
+            "mode": "all_open_pull_requests",
+            "pull_requests_scanned": len(results),
+            "blocked_prs": sum(1 for result in results if result["scan"]["blocked"]),
+            "results": results,
+        }
 
+    pr = event["pull_request"]
     return orchestrator.scan_pr_safety(pr, "github_actions_pr")
+
+
+def _pr_safety_blocked(result: dict[str, Any]) -> bool:
+    if "scan" in result:
+        return bool(result["scan"]["blocked"])
+    return bool(result.get("blocked_prs", 0))
 
 
 def _handle_scheduled_recovery() -> dict[str, Any]:

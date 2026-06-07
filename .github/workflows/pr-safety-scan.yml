@@ -4,10 +4,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
-    inputs:
-      pr_number:
-        description: Pull request number to scan
-        required: true
 
 permissions:
   contents: read
