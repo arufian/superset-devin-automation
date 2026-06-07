@@ -4,11 +4,24 @@ import logging
 import html as html_lib
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
+import hmac
+
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Depends, Security
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.security import APIKeyHeader
 
 from src.config import settings
 from src import tracker, orchestrator, webhook
+
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def _require_api_key(key: str | None = Security(_api_key_header)) -> None:
+    """Reject the request when API_KEY is configured and the caller didn't supply it."""
+    if not settings.api_key:
+        return
+    if not key or not hmac.compare_digest(key, settings.api_key):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level),
@@ -39,7 +52,7 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256", "")
 
-    if settings.github_webhook_secret and not webhook.verify_webhook_signature(body, signature):
+    if not webhook.verify_webhook_signature(body, signature):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     payload = await request.json()
@@ -50,13 +63,13 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     return orchestrator.handle_github_event(event_type, payload)
 
 
-@app.post("/scan")
+@app.post("/scan", dependencies=[Depends(_require_api_key)])
 async def trigger_scan(background_tasks: BackgroundTasks):
     background_tasks.add_task(orchestrator.scan_ready_issues)
     return {"status": "scan_started", "label": settings.scan_label}
 
 
-@app.post("/process/{issue_number}")
+@app.post("/process/{issue_number}", dependencies=[Depends(_require_api_key)])
 async def process_issue(
     issue_number: int,
     background_tasks: BackgroundTasks,
@@ -73,7 +86,7 @@ async def process_issue(
     return {"status": "dispatched", "issue": issue_number}
 
 
-@app.post("/classify/{issue_number}")
+@app.post("/classify/{issue_number}", dependencies=[Depends(_require_api_key)])
 async def classify_issue(issue_number: int):
     from src import github_client
     try:
@@ -84,7 +97,7 @@ async def classify_issue(issue_number: int):
     return orchestrator.classify_issue_event(issue, "manual_classification")
 
 
-@app.post("/pr/{pr_number}/safety")
+@app.post("/pr/{pr_number}/safety", dependencies=[Depends(_require_api_key)])
 async def scan_pr_safety(pr_number: int):
     from src import github_client
     pr_data = {
@@ -103,12 +116,12 @@ async def scan_pr_safety(pr_number: int):
     return result
 
 
-@app.post("/recover")
+@app.post("/recover", dependencies=[Depends(_require_api_key)])
 async def recover():
     return orchestrator.recover_scheduled_work()
 
 
-@app.post("/sync/{job_id}")
+@app.post("/sync/{job_id}", dependencies=[Depends(_require_api_key)])
 async def sync_job(job_id: int):
     job = tracker.get_job(job_id)
     if not job:
@@ -120,8 +133,12 @@ async def sync_job(job_id: int):
     return {"status": "no_change", "job": job}
 
 
+_MAX_LIST_LIMIT = 200
+
+
 @app.get("/jobs")
 async def list_jobs(status: str | None = None, limit: int = 50):
+    limit = max(1, min(limit, _MAX_LIST_LIMIT))
     jobs = tracker.list_jobs(status=status, limit=limit)
     return {"jobs": jobs, "count": len(jobs)}
 
@@ -144,9 +161,6 @@ async def health():
     return {
         "status": "ok",
         "simulation_mode": settings.simulation_mode,
-        "target_repo": settings.github_repo,
-        "devin_configured": bool(settings.devin_api_key and settings.devin_org_id),
-        "github_configured": bool(settings.github_token),
         "auto_merge_enabled": settings.auto_merge_enabled,
     }
 

@@ -178,11 +178,10 @@ def process_issue(
         )
         _try_comment_on_issue(
             issue_number,
-            f"## Devin Automation Failed\n\n"
-            f"The automation encountered an error while dispatching this issue to Devin.\n\n"
-            f"**Error**: `{e}`\n\n"
-            f"This issue will need manual attention.\n\n"
-            f"---\n*Automated by superset-devin-automation*",
+            "## Devin Automation Failed\n\n"
+            "The automation encountered an error while dispatching this issue to Devin.\n\n"
+            "This issue will need manual attention. Check the Actions log for details.\n\n"
+            "---\n*Automated by superset-devin-automation*",
             "failure",
         )
         return tracker.get_job(job["id"])

@@ -95,10 +95,27 @@ def create_job(
     return dict(row)
 
 
+_ALLOWED_JOB_COLUMNS: frozenset[str] = frozenset({
+    "status",
+    "devin_session_id",
+    "devin_session_url",
+    "devin_status",
+    "devin_status_detail",
+    "error_message",
+    "updated_at",
+    "metadata",
+})
+
+
 def update_job(job_id: int, **kwargs: Any) -> dict[str, Any] | None:
     kwargs["updated_at"] = datetime.now(timezone.utc).isoformat()
     if "metadata" in kwargs and isinstance(kwargs["metadata"], dict):
         kwargs["metadata"] = json.dumps(kwargs["metadata"])
+
+    bad_keys = set(kwargs.keys()) - _ALLOWED_JOB_COLUMNS
+    if bad_keys:
+        raise ValueError(f"Disallowed column names in update_job: {bad_keys}")
+
     sets = ", ".join(f"{k} = ?" for k in kwargs)
     vals = list(kwargs.values()) + [job_id]
     conn = _connect()

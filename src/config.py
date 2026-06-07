@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     plan_label: str = "devin:plan"
     scan_label: str = "devin:ready"
     safety_block_label: str = "security:blocked"
+    api_key: str = os.environ.get("API_KEY", "")
     auto_merge_enabled: bool = os.environ.get("AUTO_MERGE_ENABLED", "false").lower() == "true"
     stale_job_hours: int = int(os.environ.get("STALE_JOB_HOURS", "24"))
     db_path: str = os.environ.get("DB_PATH", "data/jobs.db")

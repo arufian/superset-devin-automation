@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 def verify_webhook_signature(payload: bytes, signature: str) -> bool:
     if not settings.github_webhook_secret:
-        logger.warning("No webhook secret configured, skipping signature verification")
-        return True
+        logger.warning("No webhook secret configured — rejecting webhook request")
+        return False
 
     if not signature:
         return False
