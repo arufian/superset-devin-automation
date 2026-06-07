@@ -67,6 +67,7 @@ URL: {issue_url}
 4. If implementation is requested, create a pull request targeting the `master` branch
 5. If plan-only mode is requested, do not modify code or create a PR; post a concrete plan and wait for human approval
 6. If you cannot safely proceed (e.g., ambiguous requirements, risky changes), report why in a comment on the issue instead of making changes
+7. Use the official Devin GitHub integration for any issue or pull request comments so GitHub shows the author as `devin-ai-integration`
 
 ## Constraints
 - Keep changes small and reviewable

@@ -159,7 +159,7 @@ def process_issue(
             ),
             "dispatch",
         )
-        if not comment_posted:
+        if not comment_posted and settings.automation_comments_enabled:
             tracker.update_job(
                 job["id"],
                 error_message="Devin session dispatched, but GitHub comment failed. Check GH_PAT issue write access.",
@@ -399,6 +399,14 @@ def _try_add_labels(issue_number: int, labels: list[str], context: str) -> bool:
 
 
 def _try_comment_on_issue(issue_number: int, body: str, context: str) -> bool:
+    if not settings.automation_comments_enabled:
+        logger.info(
+            "Skipped GitHub comment for issue/PR #%d during %s because automation comments are disabled",
+            issue_number,
+            context,
+        )
+        return False
+
     try:
         github_client.comment_on_issue(issue_number, body)
         return True

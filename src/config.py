@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     stale_job_hours: int = int(os.environ.get("STALE_JOB_HOURS", "24"))
     db_path: str = os.environ.get("DB_PATH", "data/jobs.db")
     simulation_mode: bool = os.environ.get("SIMULATION_MODE", "false").lower() == "true"
+    automation_comments_enabled: bool = os.environ.get("AUTOMATION_COMMENTS_ENABLED", "true").lower() == "true"
     log_level: str = os.environ.get("LOG_LEVEL", "INFO")
 
     class Config:

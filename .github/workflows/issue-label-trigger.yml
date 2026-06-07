@@ -55,13 +55,14 @@ jobs:
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           DEVIN_ORG_ID: ${{ secrets.DEVIN_ORG_ID }}
-          GITHUB_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPO: ${{ vars.TARGET_REPO || github.repository }}
           SIMULATION_MODE: ${{ vars.SIMULATION_MODE || 'false' }}
           LOG_LEVEL: ${{ vars.LOG_LEVEL || 'INFO' }}
           DB_PATH: data/jobs.db
           AUTO_MERGE_ENABLED: ${{ vars.AUTO_MERGE_ENABLED || 'false' }}
           STALE_JOB_HOURS: ${{ vars.STALE_JOB_HOURS || '24' }}
+          AUTOMATION_COMMENTS_ENABLED: 'false'
         run: |
           cd automation
           python -m src.actions issue-governance

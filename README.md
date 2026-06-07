@@ -2,7 +2,7 @@
 
 No-host GitHub Actions automation for governed Devin remediation in the [Apache Superset fork](https://github.com/arufian/superset).
 
-This project does **not** require hosting for the take-home demo. GitHub Actions is the runner. Actions receive issue, comment, PR, schedule, or manual-dispatch events; the Python automation classifies work, applies policy, calls Devin, comments back to GitHub, and records metrics in a SQLite artifact.
+This project does **not** require hosting for the take-home demo. GitHub Actions is the runner. Actions receive issue, comment, PR, schedule, or manual-dispatch events; the Python automation classifies work, applies policy, starts Devin sessions, and records metrics in a SQLite artifact.
 
 FastAPI/webhook mode still exists for local exploration, but it is optional.
 
@@ -19,7 +19,7 @@ Classification, policy, safety scan, persistence
         ↓
 Devin API session
         ↓
-GitHub issue/PR comment, labels, security issue, or report
+Devin GitHub integration comment/PR, workflow labels, security issue, or report
         ↓
 Actions logs, summary, and uploaded SQLite artifact
 ```
@@ -28,12 +28,14 @@ No server. No public URL. No `GITHUB_WEBHOOK_SECRET` needed.
 
 ## What It Does
 
-- Issue opened: classify priority and complexity, add labels, comment rationale.
+- Issue opened: classify priority and complexity, add labels.
 - Issue labeled `devin:fix`: classify, apply policy matrix, dispatch Devin for a focused PR/report.
 - Issue labeled `devin:plan`: dispatch Devin in plan-only mode.
 - Comment `run that plan`: dispatch Devin to implement the approved plan.
 - PR opened/synchronized/reopened: scan diff for prompt-injection and malicious-code risk; block by failing the workflow.
 - Scheduled/manual recovery: process `devin:ready`, sync sessions, mark stale jobs, classify missed issues, scan open PRs, emit metrics.
+
+In the hosted GitHub Actions demo, workflow-authored comments are disabled with `AUTOMATION_COMMENTS_ENABLED=false`. GitHub-visible issue and PR writeups should come from Devin's official GitHub integration (`devin-ai-integration`) when Devin acts inside its session. The workflow may still add routing labels as `github-actions[bot]`.
 
 ## Policy Matrix
 
@@ -63,7 +65,7 @@ Push this automation repo to GitHub, then set repository secrets:
 |---|---|
 | `DEVIN_API_KEY` | Devin service user token |
 | `DEVIN_ORG_ID` | Devin organization id |
-| `GH_PAT` | Fine-grained GitHub token for target repo, needed when workflow repo differs from target repo |
+| `GH_PAT` | Optional fine-grained GitHub token, only needed when workflow repo differs from target repo |
 
 Set repository variables:
 
@@ -120,7 +122,7 @@ Run workflow: `Devin Automation - PR Safety Scan`
 
 No input needed. Manual run scans every open pull request. Pull request open/update events scan the changed PR automatically.
 
-If unsafe diff content is found, workflow fails and comments on the affected PR.
+If unsafe diff content is found, workflow fails and records the safety event. Workflow-authored PR comments stay disabled in the hosted demo so visible writeups come from Devin.
 
 ### Scheduled Recovery Demo
 
@@ -211,7 +213,7 @@ Findings cause:
 
 - `security:blocked`
 - `devin:auto-merge-blocked`
-- PR warning comment
+- PR warning comment when workflow comments are enabled
 - security review issue
 - failed GitHub Actions check
 
