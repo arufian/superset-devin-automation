@@ -228,10 +228,15 @@ def sync_session_status(job: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def scan_ready_issues() -> list[dict[str, Any]]:
-    logger.info("Scanning for issues labeled '%s'", settings.scan_label)
-    issues = github_client.list_issues_with_label(settings.scan_label)
+    labels = [settings.scan_label, settings.trigger_label]
+    logger.info("Scanning for issues labeled any of %s", labels)
+    issues_by_number: dict[int, dict[str, Any]] = {}
+    for label in labels:
+        for issue in github_client.list_issues_with_label(label):
+            issues_by_number[issue["number"]] = issue
+
     results = []
-    for issue in issues:
+    for issue in issues_by_number.values():
         try:
             result = process_issue(issue, trigger_type="scheduled_scan")
         except Exception as e:
