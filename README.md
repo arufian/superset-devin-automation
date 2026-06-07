@@ -35,7 +35,7 @@ No server. No public URL. No `GITHUB_WEBHOOK_SECRET` needed.
 - PR opened/synchronized/reopened: scan diff for prompt-injection and malicious-code risk; block by failing the workflow.
 - Scheduled/manual recovery: process `devin:ready`, sync sessions, mark stale jobs, classify missed issues, scan open PRs, emit metrics.
 
-In the hosted GitHub Actions demo, workflow-authored comments are disabled with `AUTOMATION_COMMENTS_ENABLED=false`. GitHub-visible issue and PR writeups should come from Devin's official GitHub integration (`devin-ai-integration`) when Devin acts inside its session. The workflow may still add routing labels as `github-actions[bot]`.
+In the hosted GitHub Actions demo, workflow-authored comments are disabled with `AUTOMATION_COMMENTS_ENABLED=false`. GitHub-visible issue and PR writeups should come from Devin's official GitHub integration (`devin-ai-integration`) when Devin acts inside its session. The workflow may still add routing labels as `github-actions[bot]`. User-owned GitHub tokens are blocked from visible writes by default so automation cannot accidentally comment, label, or open issues as a personal account.
 
 ## Policy Matrix
 
@@ -65,7 +65,7 @@ Push this automation repo to GitHub, then set repository secrets:
 |---|---|
 | `DEVIN_API_KEY` | Devin service user token |
 | `DEVIN_ORG_ID` | Devin organization id |
-| `GH_PAT` | Optional fine-grained GitHub token, only needed when workflow repo differs from target repo |
+| `GH_PAT` | Optional read token for local/cross-repo experiments; do not use for visible write automation |
 
 Set repository variables:
 
@@ -77,23 +77,21 @@ Set repository variables:
 
 If workflows live directly in `arufian/superset`, `GH_PAT` can be skipped and GitHub's built-in `github.token` can work. If workflows live in this automation repo and target another repo, use `GH_PAT`.
 
-Minimum `GH_PAT` permissions for `arufian/superset`:
+Minimum `GH_PAT` permissions for read-only local/cross-repo experiments:
 
-- Issues: read/write
+- Issues: read-only
 - Pull requests: read
 - Contents: read
 - Metadata: read
 
-If scheduled scan fails with `403 Forbidden` on `/issues/{number}/comments`, the token can reach the repo but cannot write issue comments. Fix `GH_PAT` first:
+Visible writes must use GitHub Actions' built-in `github.token` in the target repo, or a GitHub App installation token. User-owned tokens such as `github_pat_...`, `ghp_...`, `gho_...`, and `ghu_...` are refused for comments, labels, issue creation, and label removal unless `ALLOW_USER_TOKEN_WRITES=true` is explicitly set for an intentional local/manual run.
 
-- create or edit a fine-grained PAT with repository access to `arufian/superset`
-- set `Issues` to `Read and write`
-- set `Pull requests` to `Read-only`
-- set `Contents` to `Read-only`
-- approve SSO / organization access if GitHub asks
-- update the `GH_PAT` repository secret in the repo where the workflow runs
+If scheduled scan fails with `403 Forbidden` on visible writes, do not switch to a personal PAT. Instead:
 
-The built-in `github.token` only writes to the workflow repo. When this automation repo targets `arufian/superset`, `GH_PAT` must have write access to `arufian/superset`.
+- move the workflows into the target repo and use `${{ github.token }}`
+- or provide a GitHub App installation token whose bot identity should own the visible write
+
+The built-in `github.token` only writes to the workflow repo. When this automation repo targets a different repo, use the cross-repo mode for read-only discovery or provide a GitHub App installation token for visible writes.
 
 ## Run Without Hosting
 
@@ -170,6 +168,8 @@ GITHUB_REPO=arufian/superset
 SIMULATION_MODE=false
 python -m src.actions process-issue 1
 ```
+
+Local live runs with a user-owned token can read issues and PRs. They will refuse visible writes by default to avoid comments or labels appearing from your account. For an intentional manual write test only, add `ALLOW_USER_TOKEN_WRITES=true`.
 
 ## Optional Local Dashboard
 

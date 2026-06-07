@@ -42,6 +42,7 @@ jobs:
           LOG_LEVEL: ${{ vars.LOG_LEVEL || 'INFO' }}
           DB_PATH: data/jobs.db
           AUTOMATION_COMMENTS_ENABLED: 'false'
+          ALLOW_USER_TOKEN_WRITES: 'false'
         run: |
           cd automation
           python -m src.actions pr-safety

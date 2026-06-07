@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     db_path: str = os.environ.get("DB_PATH", "data/jobs.db")
     simulation_mode: bool = os.environ.get("SIMULATION_MODE", "false").lower() == "true"
     automation_comments_enabled: bool = os.environ.get("AUTOMATION_COMMENTS_ENABLED", "true").lower() == "true"
+    allow_user_token_writes: bool = os.environ.get("ALLOW_USER_TOKEN_WRITES", "false").lower() == "true"
     log_level: str = os.environ.get("LOG_LEVEL", "INFO")
 
     class Config:

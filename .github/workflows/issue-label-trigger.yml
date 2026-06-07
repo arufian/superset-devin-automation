@@ -63,6 +63,7 @@ jobs:
           AUTO_MERGE_ENABLED: ${{ vars.AUTO_MERGE_ENABLED || 'false' }}
           STALE_JOB_HOURS: ${{ vars.STALE_JOB_HOURS || '24' }}
           AUTOMATION_COMMENTS_ENABLED: 'false'
+          ALLOW_USER_TOKEN_WRITES: 'false'
         run: |
           cd automation
           python -m src.actions issue-governance

@@ -17,6 +17,23 @@ def _headers() -> dict[str, str]:
     }
 
 
+def _is_user_owned_token() -> bool:
+    token = settings.github_token
+    return token.startswith(("github_pat_", "ghp_", "gho_", "ghu_"))
+
+
+def _ensure_visible_write_allowed(action: str) -> None:
+    if settings.allow_user_token_writes or not _is_user_owned_token():
+        return
+
+    raise RuntimeError(
+        f"Refusing to {action} with a user-owned GitHub token. "
+        "Use GitHub Actions' github.token or a GitHub App installation token so visible writes "
+        "do not appear from a personal account. Set ALLOW_USER_TOKEN_WRITES=true only for "
+        "intentional local/manual runs."
+    )
+
+
 def _api_url(path: str) -> str:
     return f"https://api.github.com/repos/{settings.github_repo}/{path}"
 
@@ -51,6 +68,7 @@ def comment_on_issue(issue_number: int, body: str) -> dict[str, Any]:
         logger.info("[SIM] Would comment on issue #%d: %s", issue_number, body[:100])
         return {"id": 0, "body": body, "html_url": f"https://github.com/{settings.github_repo}/issues/{issue_number}#sim"}
 
+    _ensure_visible_write_allowed(f"comment on issue/PR #{issue_number}")
     url = _api_url(f"issues/{issue_number}/comments")
     with httpx.Client(timeout=30) as client:
         resp = client.post(url, json={"body": body}, headers=_headers())
@@ -84,6 +102,7 @@ def add_labels(issue_number: int, labels: list[str]) -> None:
         logger.info("[SIM] Would add labels %s to issue #%d", labels, issue_number)
         return
 
+    _ensure_visible_write_allowed(f"add labels to issue/PR #{issue_number}")
     url = _api_url(f"issues/{issue_number}/labels")
     with httpx.Client(timeout=30) as client:
         resp = client.post(url, json={"labels": labels}, headers=_headers())
@@ -99,6 +118,7 @@ def remove_label(issue_number: int, label: str) -> None:
         logger.info("[SIM] Would remove label '%s' from issue #%d", label, issue_number)
         return
 
+    _ensure_visible_write_allowed(f"remove label from issue/PR #{issue_number}")
     url = _api_url(f"issues/{issue_number}/labels/{label}")
     with httpx.Client(timeout=30) as client:
         resp = client.delete(url, headers=_headers())
@@ -117,6 +137,7 @@ def create_issue(title: str, body: str, labels: list[str] | None = None) -> dict
             "html_url": f"https://github.com/{settings.github_repo}/issues/999#sim",
         }
 
+    _ensure_visible_write_allowed("create issue")
     url = _api_url("issues")
     payload: dict[str, Any] = {"title": title, "body": body}
     if labels:
