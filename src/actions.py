@@ -61,7 +61,16 @@ def _handle_issue_governance() -> dict[str, Any]:
 
     if event_name == "workflow_dispatch":
         inputs = event.get("inputs", {})
-        issue_number = int(inputs["issue_number"])
+        if "issue_number" not in inputs:
+            raise RuntimeError(
+                "workflow_dispatch event missing required 'issue_number' input"
+            )
+        try:
+            issue_number = int(inputs["issue_number"])
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError(
+                f"Invalid issue_number input '{inputs['issue_number']}': must be an integer"
+            ) from exc
         action = inputs.get("action", "fix")
         issue = github_client.get_issue(issue_number)
         if action == "classify":
@@ -95,7 +104,12 @@ def _handle_pr_safety() -> dict[str, Any]:
             "results": results,
         }
 
-    pr = event["pull_request"]
+    pr = event.get("pull_request")
+    if not pr:
+        raise RuntimeError(
+            f"Expected 'pull_request' key in event payload for event '{event_name}', "
+            f"but it was missing. Available keys: {sorted(event.keys())}"
+        )
     return orchestrator.scan_pr_safety(pr, "github_actions_pr")
 
 
@@ -116,8 +130,17 @@ def _github_event() -> dict[str, Any]:
     path = os.environ.get("GITHUB_EVENT_PATH")
     if not path:
         return {}
-    with open(path, "r", encoding="utf-8") as fh:
-        return json.load(fh)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except FileNotFoundError:
+        raise RuntimeError(
+            f"GITHUB_EVENT_PATH is set to '{path}' but the file does not exist"
+        )
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"GITHUB_EVENT_PATH file '{path}' contains invalid JSON: {exc}"
+        ) from exc
 
 
 def _write_actions_summary(metrics: dict[str, Any]) -> None:

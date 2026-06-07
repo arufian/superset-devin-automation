@@ -5,6 +5,21 @@ import os
 from pydantic_settings import BaseSettings
 
 
+def _parse_stale_job_hours() -> int:
+    raw = os.environ.get("STALE_JOB_HOURS", "24")
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(
+            f"STALE_JOB_HOURS must be an integer, got '{raw}'"
+        )
+    if value <= 0:
+        raise ValueError(
+            f"STALE_JOB_HOURS must be positive, got {value}"
+        )
+    return value
+
+
 class Settings(BaseSettings):
     devin_api_key: str = os.environ.get("DEVIN_API_KEY", "")
     devin_org_id: str = os.environ.get("DEVIN_ORG_ID", "")
@@ -17,7 +32,7 @@ class Settings(BaseSettings):
     scan_label: str = "devin:ready"
     safety_block_label: str = "security:blocked"
     auto_merge_enabled: bool = os.environ.get("AUTO_MERGE_ENABLED", "false").lower() == "true"
-    stale_job_hours: int = int(os.environ.get("STALE_JOB_HOURS", "24"))
+    stale_job_hours: int = _parse_stale_job_hours()
     db_path: str = os.environ.get("DB_PATH", "data/jobs.db")
     simulation_mode: bool = os.environ.get("SIMULATION_MODE", "false").lower() == "true"
     log_level: str = os.environ.get("LOG_LEVEL", "INFO")

@@ -96,7 +96,13 @@ def create_session(
     logger.info("Creating Devin session: %s", url)
     with httpx.Client(timeout=60) as client:
         resp = client.post(url, json=payload, headers=_headers())
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = resp.text[:300].replace("\n", " ")
+            raise RuntimeError(
+                f"Devin API {resp.status_code} creating session: {detail}"
+            ) from exc
         data = resp.json()
         logger.info("Session created: %s", data.get("session_id"))
         return data
@@ -120,7 +126,13 @@ def get_session(session_id: str) -> dict[str, Any]:
     url = f"{_base_url()}/sessions/{session_id}"
     with httpx.Client(timeout=30) as client:
         resp = client.get(url, headers=_headers())
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = resp.text[:300].replace("\n", " ")
+            raise RuntimeError(
+                f"Devin API {resp.status_code} fetching session '{session_id}': {detail}"
+            ) from exc
         return resp.json()
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import html as html_lib
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -47,12 +48,19 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
 
     logger.info("Received GitHub event: %s", event_type)
 
-    return orchestrator.handle_github_event(event_type, payload)
+    try:
+        return orchestrator.handle_github_event(event_type, payload)
+    except Exception as e:
+        logger.error("Webhook processing failed for event '%s': %s", event_type, e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process '{event_type}' event: {e}",
+        )
 
 
 @app.post("/scan")
 async def trigger_scan(background_tasks: BackgroundTasks):
-    background_tasks.add_task(orchestrator.scan_ready_issues)
+    background_tasks.add_task(_run_scan_ready_issues)
     return {"status": "scan_started", "label": settings.scan_label}
 
 
@@ -69,7 +77,7 @@ async def process_issue(
         raise HTTPException(status_code=404, detail=f"Issue not found: {e}")
 
     forced_action = action if action in {"plan", "implement_plan"} else None
-    background_tasks.add_task(orchestrator.process_issue, issue, "manual_trigger", forced_action)
+    background_tasks.add_task(_run_process_issue, issue, "manual_trigger", forced_action)
     return {"status": "dispatched", "issue": issue_number}
 
 
@@ -105,7 +113,14 @@ async def scan_pr_safety(pr_number: int):
 
 @app.post("/recover")
 async def recover():
-    return orchestrator.recover_scheduled_work()
+    try:
+        return orchestrator.recover_scheduled_work()
+    except Exception as e:
+        logger.error("Recovery scan failed: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Recovery scan failed: {e}",
+        )
 
 
 @app.post("/sync/{job_id}")
@@ -118,6 +133,29 @@ async def sync_job(job_id: int):
     if result:
         return {"status": "synced", "job": result}
     return {"status": "no_change", "job": job}
+
+
+def _run_scan_ready_issues() -> None:
+    try:
+        orchestrator.scan_ready_issues()
+    except Exception as e:
+        logger.error("Background scan task failed: %s", e, exc_info=True)
+
+
+def _run_process_issue(
+    issue: dict[str, Any],
+    trigger_type: str,
+    forced_action: str | None,
+) -> None:
+    try:
+        orchestrator.process_issue(issue, trigger_type, forced_action)
+    except Exception as e:
+        logger.error(
+            "Background process_issue task failed for issue #%s: %s",
+            issue.get("number"),
+            e,
+            exc_info=True,
+        )
 
 
 @app.get("/jobs")

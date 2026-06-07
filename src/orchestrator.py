@@ -223,7 +223,11 @@ def sync_session_status(job: dict[str, Any]) -> dict[str, Any] | None:
         return tracker.update_job(job["id"], **updates)
 
     except Exception as e:
-        logger.error("Failed to sync session for job %d: %s", job["id"], e)
+        logger.error("Failed to sync session for job %d: %s", job["id"], e, exc_info=True)
+        tracker.update_job(
+            job["id"],
+            error_message=f"Session sync failed: {e}",
+        )
         return None
 
 
@@ -272,12 +276,18 @@ def scan_pr_safety(
     if scan.blocked:
         _try_add_labels(pr_number, [settings.safety_block_label, "devin:auto-merge-blocked"], "pr_safety")
         _try_comment_on_issue(pr_number, _safety_block_comment(scan_data), "pr_safety")
-        _try_create_issue(
+        security_issue = _try_create_issue(
             title=f"Security review needed for PR #{pr_number}: {pr_title}",
             body=_security_issue_body(pr_data, scan_data),
             labels=[settings.safety_block_label, "devin:security-review"],
             context="pr_safety",
         )
+        if not security_issue:
+            logger.error(
+                "Failed to create security review issue for PR #%d — "
+                "safety findings may go unnoticed without manual follow-up",
+                pr_number,
+            )
         logger.warning("PR #%d blocked by safety scan", pr_number)
     else:
         logger.info("PR #%d safety scan passed", pr_number)
@@ -339,6 +349,7 @@ def recover_scheduled_work() -> dict[str, Any]:
             marked_stale.append(stale_job)
 
     classified = []
+    classification_errors: list[dict[str, Any]] = []
     for issue in github_client.list_open_issues():
         if tracker.get_latest_classification(issue["number"]):
             continue
@@ -346,20 +357,25 @@ def recover_scheduled_work() -> dict[str, Any]:
             classified.append(classify_issue_event(issue, "scheduled_unprocessed_issue", post_comment=True))
         except Exception as e:
             logger.error("Scheduled classification failed for issue #%s: %s", issue.get("number"), e, exc_info=True)
+            classification_errors.append({"issue_number": issue.get("number"), "error": str(e)})
 
     pr_scans = []
+    pr_scan_errors: list[dict[str, Any]] = []
     for pr in github_client.list_open_pull_requests():
         try:
             pr_scans.append(scan_pr_safety(pr, "scheduled_pr_scan"))
         except Exception as e:
             logger.error("Scheduled PR scan failed for PR #%s: %s", pr.get("number"), e, exc_info=True)
+            pr_scan_errors.append({"pr_number": pr.get("number"), "error": str(e)})
 
     return {
         "ready_issues_processed": len(ready_results),
         "sessions_synced": len(synced),
         "stale_jobs_marked": len(marked_stale),
         "unprocessed_issues_classified": len(classified),
+        "classification_errors": classification_errors,
         "open_prs_scanned": len(pr_scans),
+        "pr_scan_errors": pr_scan_errors,
         "blocked_prs": sum(1 for result in pr_scans if result["scan"]["blocked"]),
     }
 
