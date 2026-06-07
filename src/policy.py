@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from src.config import settings
 
@@ -16,15 +16,7 @@ class PolicyDecision:
     rationale: str
 
     def as_dict(self) -> dict[str, str | bool]:
-        return {
-            "action": self.action,
-            "devin_mode": self.devin_mode,
-            "human_review_required": self.human_review_required,
-            "auto_merge_candidate": self.auto_merge_candidate,
-            "auto_merge_enabled": self.auto_merge_enabled,
-            "approval_required_before_implementation": self.approval_required_before_implementation,
-            "rationale": self.rationale,
-        }
+        return asdict(self)
 
 
 def decide(

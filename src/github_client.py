@@ -52,15 +52,32 @@ def _raise_for_status(resp: httpx.Response, action: str) -> None:
         raise RuntimeError(message) from exc
 
 
+def _request(
+    method: str,
+    path: str,
+    action: str,
+    *,
+    json: dict[str, Any] | None = None,
+    params: dict[str, Any] | None = None,
+    headers_override: dict[str, str] | None = None,
+    timeout: int = 30,
+    ignore_status: int | None = None,
+) -> httpx.Response:
+    url = _api_url(path)
+    hdrs = headers_override or _headers()
+    with httpx.Client(timeout=timeout) as client:
+        resp = client.request(method, url, json=json, params=params, headers=hdrs)
+        if ignore_status is not None and resp.status_code == ignore_status:
+            return resp
+        _raise_for_status(resp, action)
+        return resp
+
+
 def get_issue(issue_number: int) -> dict[str, Any]:
     if settings.simulation_mode:
         return _simulate_issue(issue_number)
 
-    url = _api_url(f"issues/{issue_number}")
-    with httpx.Client(timeout=30) as client:
-        resp = client.get(url, headers=_headers())
-        _raise_for_status(resp, f"get issue #{issue_number}")
-        return resp.json()
+    return _request("GET", f"issues/{issue_number}", f"get issue #{issue_number}").json()
 
 
 def comment_on_issue(issue_number: int, body: str) -> dict[str, Any]:
@@ -69,11 +86,11 @@ def comment_on_issue(issue_number: int, body: str) -> dict[str, Any]:
         return {"id": 0, "body": body, "html_url": f"https://github.com/{settings.github_repo}/issues/{issue_number}#sim"}
 
     _ensure_visible_write_allowed(f"comment on issue/PR #{issue_number}")
-    url = _api_url(f"issues/{issue_number}/comments")
-    with httpx.Client(timeout=30) as client:
-        resp = client.post(url, json={"body": body}, headers=_headers())
-        _raise_for_status(resp, f"comment on issue/PR #{issue_number}")
-        return resp.json()
+    return _request(
+        "POST", f"issues/{issue_number}/comments",
+        f"comment on issue/PR #{issue_number}",
+        json={"body": body},
+    ).json()
 
 
 def list_issues_with_label(label: str, state: str = "open") -> list[dict[str, Any]]:
@@ -82,15 +99,10 @@ def list_issues_with_label(label: str, state: str = "open") -> list[dict[str, An
         issue["labels"] = [{"name": label}]
         return [issue]
 
-    url = _api_url("issues")
-    with httpx.Client(timeout=30) as client:
-        resp = client.get(
-            url,
-            params={"labels": label, "state": state, "per_page": 50},
-            headers=_headers(),
-        )
-        _raise_for_status(resp, f"list issues with label {label}")
-        return resp.json()
+    return _request(
+        "GET", "issues", f"list issues with label {label}",
+        params={"labels": label, "state": state, "per_page": 50},
+    ).json()
 
 
 def add_labels(issue_number: int, labels: list[str]) -> None:
@@ -103,10 +115,11 @@ def add_labels(issue_number: int, labels: list[str]) -> None:
         return
 
     _ensure_visible_write_allowed(f"add labels to issue/PR #{issue_number}")
-    url = _api_url(f"issues/{issue_number}/labels")
-    with httpx.Client(timeout=30) as client:
-        resp = client.post(url, json={"labels": labels}, headers=_headers())
-        _raise_for_status(resp, f"add labels to issue/PR #{issue_number}")
+    _request(
+        "POST", f"issues/{issue_number}/labels",
+        f"add labels to issue/PR #{issue_number}",
+        json={"labels": labels},
+    )
 
 
 def add_label(issue_number: int, label: str) -> None:
@@ -119,11 +132,11 @@ def remove_label(issue_number: int, label: str) -> None:
         return
 
     _ensure_visible_write_allowed(f"remove label from issue/PR #{issue_number}")
-    url = _api_url(f"issues/{issue_number}/labels/{label}")
-    with httpx.Client(timeout=30) as client:
-        resp = client.delete(url, headers=_headers())
-        if resp.status_code != 404:
-            _raise_for_status(resp, f"remove label from issue/PR #{issue_number}")
+    _request(
+        "DELETE", f"issues/{issue_number}/labels/{label}",
+        f"remove label from issue/PR #{issue_number}",
+        ignore_status=404,
+    )
 
 
 def create_issue(title: str, body: str, labels: list[str] | None = None) -> dict[str, Any]:
@@ -138,14 +151,10 @@ def create_issue(title: str, body: str, labels: list[str] | None = None) -> dict
         }
 
     _ensure_visible_write_allowed("create issue")
-    url = _api_url("issues")
     payload: dict[str, Any] = {"title": title, "body": body}
     if labels:
         payload["labels"] = labels
-    with httpx.Client(timeout=30) as client:
-        resp = client.post(url, json=payload, headers=_headers())
-        _raise_for_status(resp, "create issue")
-        return resp.json()
+    return _request("POST", "issues", "create issue", json=payload).json()
 
 
 def get_pull_request_diff(pr_number: int) -> str:
@@ -156,13 +165,12 @@ def get_pull_request_diff(pr_number: int) -> str:
             "+print('safe simulated diff')\n"
         )
 
-    url = _api_url(f"pulls/{pr_number}")
     headers = _headers()
     headers["Accept"] = "application/vnd.github.v3.diff"
-    with httpx.Client(timeout=30) as client:
-        resp = client.get(url, headers=headers)
-        _raise_for_status(resp, f"get PR #{pr_number} diff")
-        return resp.text
+    return _request(
+        "GET", f"pulls/{pr_number}", f"get PR #{pr_number} diff",
+        headers_override=headers,
+    ).text
 
 
 def get_pull_request(pr_number: int) -> dict[str, Any]:
@@ -173,33 +181,24 @@ def get_pull_request(pr_number: int) -> dict[str, Any]:
             "html_url": f"https://github.com/{settings.github_repo}/pull/{pr_number}#sim",
         }
 
-    url = _api_url(f"pulls/{pr_number}")
-    with httpx.Client(timeout=30) as client:
-        resp = client.get(url, headers=_headers())
-        _raise_for_status(resp, f"get PR #{pr_number}")
-        return resp.json()
+    return _request("GET", f"pulls/{pr_number}", f"get PR #{pr_number}").json()
 
 
 def list_open_pull_requests() -> list[dict[str, Any]]:
     if settings.simulation_mode:
         return []
 
-    url = _api_url("pulls")
     pull_requests: list[dict[str, Any]] = []
-    with httpx.Client(timeout=30) as client:
-        page = 1
-        while True:
-            resp = client.get(
-                url,
-                params={"state": "open", "per_page": 100, "page": page},
-                headers=_headers(),
-            )
-            _raise_for_status(resp, "list open PRs")
-            batch = resp.json()
-            pull_requests.extend(batch)
-            if len(batch) < 100:
-                break
-            page += 1
+    page = 1
+    while True:
+        batch = _request(
+            "GET", "pulls", "list open PRs",
+            params={"state": "open", "per_page": 100, "page": page},
+        ).json()
+        pull_requests.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
     return pull_requests
 
 
@@ -207,15 +206,11 @@ def list_open_issues(per_page: int = 50) -> list[dict[str, Any]]:
     if settings.simulation_mode:
         return [_simulate_issue(1)]
 
-    url = _api_url("issues")
-    with httpx.Client(timeout=30) as client:
-        resp = client.get(
-            url,
-            params={"state": "open", "per_page": per_page},
-            headers=_headers(),
-        )
-        _raise_for_status(resp, "list open issues")
-        return [issue for issue in resp.json() if "pull_request" not in issue]
+    resp = _request(
+        "GET", "issues", "list open issues",
+        params={"state": "open", "per_page": per_page},
+    )
+    return [issue for issue in resp.json() if "pull_request" not in issue]
 
 
 def _simulate_issue(issue_number: int) -> dict[str, Any]:

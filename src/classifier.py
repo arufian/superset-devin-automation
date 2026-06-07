@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 
@@ -16,12 +16,7 @@ class IssueClassification:
     complexity_reason: str
 
     def as_dict(self) -> dict[str, str]:
-        return {
-            "priority": self.priority,
-            "complexity": self.complexity,
-            "priority_reason": self.priority_reason,
-            "complexity_reason": self.complexity_reason,
-        }
+        return asdict(self)
 
 
 def classify_issue(issue_data: dict[str, Any]) -> IssueClassification:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -196,7 +195,7 @@ def sync_session_status(job: dict[str, Any]) -> dict[str, Any] | None:
         session = devin_client.get_session(job["devin_session_id"])
         new_status = session.get("status", "unknown")
         new_detail = session.get("status_detail")
-        meta_dict = _job_metadata(job)
+        meta_dict = tracker.parse_job_metadata(job)
         devin_mode = meta_dict.get("policy", {}).get("devin_mode")
 
         updates: dict[str, Any] = {
@@ -389,18 +388,21 @@ def _mark_stale_if_needed(job: dict[str, Any]) -> dict[str, Any] | None:
     return tracker.update_job(job["id"], status="stale", error_message="Session stale")
 
 
-def _try_add_labels(issue_number: int, labels: list[str], context: str) -> bool:
+def _try_github_action(
+    action_fn: Any,
+    context: str,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
     try:
-        github_client.add_labels(issue_number, labels)
-        return True
+        return action_fn(*args, **kwargs)
     except Exception as e:
-        logger.warning(
-            "GitHub label write failed for issue/PR #%d during %s: %s",
-            issue_number,
-            context,
-            e,
-        )
-        return False
+        logger.warning("GitHub API call failed during %s: %s", context, e)
+        return None
+
+
+def _try_add_labels(issue_number: int, labels: list[str], context: str) -> bool:
+    return _try_github_action(github_client.add_labels, context, issue_number, labels) is not None
 
 
 def _try_comment_on_issue(issue_number: int, body: str, context: str) -> bool:
@@ -412,25 +414,11 @@ def _try_comment_on_issue(issue_number: int, body: str, context: str) -> bool:
         )
         return False
 
-    try:
-        github_client.comment_on_issue(issue_number, body)
-        return True
-    except Exception as e:
-        logger.warning(
-            "GitHub comment write failed for issue/PR #%d during %s: %s",
-            issue_number,
-            context,
-            e,
-        )
-        return False
+    return _try_github_action(github_client.comment_on_issue, context, issue_number, body) is not None
 
 
 def _try_create_issue(title: str, body: str, labels: list[str], context: str) -> dict[str, Any] | None:
-    try:
-        return github_client.create_issue(title=title, body=body, labels=labels)
-    except Exception as e:
-        logger.warning("GitHub issue create failed during %s: %s", context, e)
-        return None
+    return _try_github_action(github_client.create_issue, context, title, body, labels)
 
 
 def _classification_comment(result: classifier.IssueClassification, trigger_type: str) -> str:
@@ -523,11 +511,3 @@ def _label_names(issue_data: dict[str, Any]) -> set[str]:
     return {label["name"] for label in issue_data.get("labels", [])}
 
 
-def _job_metadata(job: dict[str, Any]) -> dict[str, Any]:
-    raw_meta = job.get("metadata") or "{}"
-    if isinstance(raw_meta, dict):
-        return raw_meta
-    try:
-        return json.loads(raw_meta)
-    except json.JSONDecodeError:
-        return {}

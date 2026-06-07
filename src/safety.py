@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 
@@ -15,14 +15,7 @@ class SafetyFinding:
     excerpt: str
 
     def as_dict(self) -> dict[str, Any]:
-        return {
-            "category": self.category,
-            "severity": self.severity,
-            "rule": self.rule,
-            "file_path": self.file_path,
-            "line_number": self.line_number,
-            "excerpt": self.excerpt,
-        }
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -33,12 +26,7 @@ class SafetyScan:
     findings: list[SafetyFinding]
 
     def as_dict(self) -> dict[str, Any]:
-        return {
-            "blocked": self.blocked,
-            "prompt_injection_count": self.prompt_injection_count,
-            "malicious_code_count": self.malicious_code_count,
-            "findings": [finding.as_dict() for finding in self.findings],
-        }
+        return asdict(self)
 
 
 PROMPT_INJECTION_RULES: tuple[tuple[str, str], ...] = (
