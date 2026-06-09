@@ -208,7 +208,7 @@ def search_issues(query: str) -> list[dict[str, Any]]:
         return []
 
     url = "https://api.github.com/search/issues"
-    params = {"q": f"repo:{settings.github_repo}+{query}", "per_page": 30}
+    params = {"q": f"repo:{settings.github_repo} {query}", "per_page": 30}
     with httpx.Client(timeout=30) as client:
         resp = client.get(url, params=params, headers=_headers())
         _raise_for_status(resp, f"search issues with query: {query}")

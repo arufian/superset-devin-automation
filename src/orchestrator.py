@@ -445,7 +445,7 @@ def _try_create_issue(title: str, body: str, labels: list[str], context: str) ->
 
 def _find_existing_security_issue_for_pr(pr_number: int) -> dict[str, Any] | None:
     try:
-        query = f'label:"{settings.safety_block_label}" state:open "PR #{pr_number}" in:title'
+        query = f'type:issue label:"{settings.safety_block_label}" state:open "PR #{pr_number}" in:title'
         results = github_client.search_issues(query)
         if results:
             return results[0]
