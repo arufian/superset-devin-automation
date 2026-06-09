@@ -277,12 +277,22 @@ def scan_pr_safety(
     if scan.blocked:
         _try_add_labels(pr_number, [settings.safety_block_label, "devin:auto-merge-blocked"], "pr_safety")
         _try_comment_on_issue(pr_number, _safety_block_comment(scan_data), "pr_safety")
-        _try_create_issue(
-            title=f"Security review needed for PR #{pr_number}: {pr_title}",
-            body=_security_issue_body(pr_data, scan_data),
-            labels=[settings.safety_block_label, "devin:security-review"],
-            context="pr_safety",
-        )
+
+        existing_issue = _find_existing_security_issue_for_pr(pr_number)
+        if existing_issue:
+            logger.info(
+                "Skipping issue creation for PR #%d — existing issue #%d already open",
+                pr_number,
+                existing_issue["number"],
+            )
+        else:
+            _try_create_issue(
+                title=f"Security review needed for PR #{pr_number}: {pr_title}",
+                body=_security_issue_body(pr_data, scan_data),
+                labels=[settings.safety_block_label, "devin:security-review"],
+                context="pr_safety",
+            )
+
         logger.warning("PR #%d blocked by safety scan", pr_number)
     else:
         logger.info("PR #%d safety scan passed", pr_number)
@@ -430,6 +440,18 @@ def _try_create_issue(title: str, body: str, labels: list[str], context: str) ->
         return github_client.create_issue(title=title, body=body, labels=labels)
     except Exception as e:
         logger.warning("GitHub issue create failed during %s: %s", context, e)
+        return None
+
+
+def _find_existing_security_issue_for_pr(pr_number: int) -> dict[str, Any] | None:
+    try:
+        query = f'label:"{settings.safety_block_label}" state:open "PR #{pr_number}" in:title'
+        results = github_client.search_issues(query)
+        if results:
+            return results[0]
+        return None
+    except Exception as e:
+        logger.warning("Failed to search existing security issues for PR #%d: %s", pr_number, e)
         return None
 
 

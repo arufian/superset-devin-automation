@@ -203,6 +203,19 @@ def list_open_pull_requests() -> list[dict[str, Any]]:
     return pull_requests
 
 
+def search_issues(query: str) -> list[dict[str, Any]]:
+    if settings.simulation_mode:
+        return []
+
+    url = "https://api.github.com/search/issues"
+    params = {"q": f"repo:{settings.github_repo}+{query}", "per_page": 30}
+    with httpx.Client(timeout=30) as client:
+        resp = client.get(url, params=params, headers=_headers())
+        _raise_for_status(resp, f"search issues with query: {query}")
+        data = resp.json()
+        return data.get("items", [])
+
+
 def list_open_issues(per_page: int = 50) -> list[dict[str, Any]]:
     if settings.simulation_mode:
         return [_simulate_issue(1)]
